@@ -1,0 +1,337 @@
+{
+  "name": "AI Lead Qualifier",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1VtobP35klNCAYSNLk1mtspP02aMP5-AW5n8mi8eDjxs/edit?resourcekey=&gid=589802918#gid=589802918",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1VtobP35klNCAYSNLk1mtspP02aMP5-AW5n8mi8eDjxs/edit?resourcekey=&gid=589802918#gid=589802918",
+          "mode": "url"
+        },
+        "event": "rowAdded",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheetsTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "f817002a-668d-4868-955e-91ac8ded49d4",
+      "name": "Google Sheets Trigger",
+      "credentials": {
+        "googleSheetsTriggerOAuth2Api": {
+          "id": "YVihNnQn6kBINcTp",
+          "name": "Google Sheets Trigger account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "const row = $input.first().json;\n\nconst lead = {\n  name: row['Full Name'] || 'Unknown',\n  email: row['Email Address'] || '',\n  service: row['What service are you looking for?'] || '',\n  budget: row['What is your budget? (in USD)'] || '0'\n};\n\nreturn [{ json: { lead } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "1eba32c5-431b-49e0-b0b2-23dc40fe58f0",
+      "name": "Extract Lead Info"
+    },
+    {
+      "parameters": {
+        "jsCode": "const lead = $input.first().json.lead;\n\nconst body = {\n  model: \"claude-haiku-4-5-20251001\",\n  max_tokens: 1024,\n  messages: [\n    {\n      role: \"user\",\n      content: `You are a lead qualification assistant. Score this lead from 1-10 and write a short personalized reply email.\n\nLead details:\n- Name: ${lead.name}\n- Service needed: ${lead.service}\n- Budget: ${lead.budget}\n\nRespond in this exact format:\nSCORE: [number]/10\nREASON: [one sentence why]\nEMAIL_SUBJECT: [subject line]\nEMAIL_BODY: [2-3 sentence personalized reply email addressing them by name]`\n    }\n  ]\n};\n\nreturn [{ json: { body, lead } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        416,
+        0
+      ],
+      "id": "7c3d9b54-f552-4380-87fb-4c4501fa2b4d",
+      "name": "Build Scoring Prompt"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "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"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        624,
+        0
+      ],
+      "id": "a7efd8ec-a936-4be5-8701-20e3626beb65",
+      "name": "Score with Claude"
+    },
+    {
+      "parameters": {
+        "jsCode": "const text = $input.first().json.content[0].text;\n\n// Parse Claude's structured response\nconst scoreMatch = text.match(/SCORE:\\s*(\\d+)\\/10/);\nconst reasonMatch = text.match(/REASON:\\s*(.+)/);\nconst subjectMatch = text.match(/EMAIL_SUBJECT:\\s*(.+)/);\nconst bodyMatch = text.match(/EMAIL_BODY:\\s*([\\s\\S]+)/);\n\nconst score = scoreMatch ? parseInt(scoreMatch[1]) : 0;\nconst reason = reasonMatch ? reasonMatch[1].trim() : '';\nconst emailSubject = subjectMatch ? subjectMatch[1].trim() : 'Thank you for your inquiry';\nconst emailBody = bodyMatch ? bodyMatch[1].trim() : '';\n\n// Pull lead info from the Build Scoring Prompt node\nconst lead = $('Build Scoring Prompt').item.json.lead;\n\nreturn [{\n  json: {\n    score,\n    reason,\n    emailSubject,\n    emailBody,\n    leadEmail: lead.email,\n    leadName: lead.name\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        832,
+        0
+      ],
+      "id": "fe63f71d-8b34-40ff-8561-6b8656323431",
+      "name": "Parse Claude Response"
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "value": "https://docs.google.com/spreadsheets/d/1VtobP35klNCAYSNLk1mtspP02aMP5-AW5n8mi8eDjxs/edit?resourcekey=&gid=589802918#gid=589802918",
+          "mode": "url"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Form Responses 1",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Score": "={{ $json.score }}",
+            "Reason": "={{ $json.reason }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Timestamp",
+              "displayName": "Timestamp",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Email Address",
+              "displayName": "Email Address",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Full Name ",
+              "displayName": "Full Name ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "  Email Address  ",
+              "displayName": "  Email Address  ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "  What service are you looking for?  ",
+              "displayName": "  What service are you looking for?  ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "  What is your budget? (in USD)  ",
+              "displayName": "  What is your budget? (in USD)  ",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Score",
+              "displayName": "Score",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "Reason",
+              "displayName": "Reason",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        1040,
+        0
+      ],
+      "id": "7585105d-9d1f-4538-98c3-6e6dc77ffa00",
+      "name": "Log to Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "HZmMY9wQbtdoTYCU",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $('Parse Claude Response').item.json.leadEmail }}",
+        "subject": "={{ $('Parse Claude Response').item.json.emailSubject }}",
+        "emailType": "text",
+        "message": "={{ $('Parse Claude Response').item.json.emailBody }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        1232,
+        0
+      ],
+      "id": "57d5d9b7-959a-46a2-b68c-36c433a4d4bb",
+      "name": "Send a message",
+      "webhookId": "3ab24063-a85e-4d8b-b648-f502e6271e43",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gqmbO4GBNDF9exSO",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Google Sheets Trigger": {
+      "main": [
+        [
+          {
+            "node": "Extract Lead Info",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Lead Info": {
+      "main": [
+        [
+          {
+            "node": "Build Scoring Prompt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Scoring Prompt": {
+      "main": [
+        [
+          {
+            "node": "Score with Claude",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Score with Claude": {
+      "main": [
+        [
+          {
+            "node": "Parse Claude Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Claude Response": {
+      "main": [
+        [
+          {
+            "node": "Log to Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Sheets": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "17855bb8-c67d-43ef-88dc-13a94e6b0c37",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "3951840f892b02d2cd52c283598ac2a839208b8c390a40b8c15d631a4f492cb9"
+  },
+  "id": "dtVULnYuEOJbT28M",
+  "tags": []
+}
